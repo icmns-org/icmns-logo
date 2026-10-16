@@ -10,20 +10,33 @@ The compaction merges every fibre with the same colour/width/opacity into a
 single <path>, simplifies each polyline (Ramer-Douglas-Peucker, 0.3 px) and
 writes relative coordinates; the picture is unchanged at any normal size.
 
-Run after make_logo.py:   python3 web_assets.py   (needs node + playwright)
+Run after make_logo.py:   python3 web_assets.py [--src icmns] [--out web] [--transparent]
+PNGs are rendered with node + playwright (render.js) if available, otherwise
+with a local Google Chrome / Chromium in headless mode (set CHROME to its path).
 """
+import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 
 import numpy as np
 
+ap = argparse.ArgumentParser()
+ap.add_argument("--src", default="icmns", help="prefix used with make_logo.py --out")
+ap.add_argument("--out", default="web", help="output folder")
+ap.add_argument("--transparent", action="store_true",
+                help="no background rectangle (the brain still hides what is behind it, "
+                     "using the palette background, so place it on that colour)")
+opt = ap.parse_args()
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "web")
+OUT = os.path.join(HERE, opt.out)
 os.makedirs(OUT, exist_ok=True)
-src = open(os.path.join(HERE, "icmns_logo.svg")).read()
+src = open(os.path.join(HERE, f"{opt.src}_logo.svg")).read()
 
 BG = re.search(r'<rect width="\d+" height="\d+" fill="(#[0-9a-f]+)"', src).group(1)
 W, H = map(int, re.search(r'viewBox="0 0 (\d+) (\d+)"', src).groups())
@@ -115,6 +128,7 @@ def svg(viewbox, body, title, size=None):
     wh = f' width="{size[0]}" height="{size[1]}"' if size else ""
     return "\n".join([f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb}"{wh} role="img">',
                       f"<title>{title}</title>",
+                      "" if opt.transparent else
                       f'<rect x="{viewbox[0]}" y="{viewbox[1]}" width="{viewbox[2]}" '
                       f'height="{viewbox[3]}" fill="{BG}"/>', *body, "</svg>"])
 
@@ -155,6 +169,9 @@ files["icmns_header.svg"] = svg(LOCK_VB, lock, NAME, LOCK_VB[2:])
 # favicon: heavier strokes, fewer tiny pieces, cropped tight to the brain
 fav = brain_body(width_scale=6.0, eps=2.0)
 files["favicon.svg"] = svg((95, 60, 820, 820), fav, "ICMNS", (820, 820))
+# mark for small display sizes (site header, ~48-96 px): moderately heavier strokes
+files["icmns_mark_small.svg"] = svg((95, 60, 820, 820), brain_body(width_scale=3.0, eps=1.0),
+                                    "ICMNS", (820, 820))
 
 for name, text in files.items():
     with open(os.path.join(OUT, name), "w") as fh:
@@ -162,6 +179,44 @@ for name, text in files.items():
 
 # ---------------------------------------------------------------- rasters
 render = os.path.join(HERE, "render.js")
+CHROME = os.environ.get("CHROME") or next(
+    (c for c in ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                 shutil.which("chromium") or "", shutil.which("google-chrome") or ""]
+     if c and os.path.exists(c)), None)
+
+
+def use_node():
+    if not shutil.which("node"):
+        return False
+    return subprocess.run(["node", "-e", "require('playwright')"], cwd=HERE,
+                          capture_output=True).returncode == 0
+
+
+NODE = use_node()
+
+
+def rasterise(svg_path, png_path, w, h):
+    """SVG -> PNG at w x h, via playwright if present, else headless Chrome + Pillow."""
+    if NODE:
+        subprocess.run(["node", render, svg_path, png_path, str(w), str(h)], check=True)
+        return
+    from PIL import Image
+    k = max(1, -(-600 // min(w, h)))            # headless windows can't be tiny: render big
+    W2, H2 = w * k, h * k
+    with tempfile.TemporaryDirectory() as tmp:
+        html = os.path.join(tmp, "r.html")
+        with open(html, "w") as fh:
+            fh.write(f'<html><body style="margin:0;background:transparent">'
+                     f'<img src="file://{os.path.abspath(svg_path)}" '
+                     f'style="display:block;width:{W2}px;height:{H2}px"></body></html>')
+        shot = os.path.join(tmp, "r.png")
+        subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                        "--allow-file-access-from-files", "--default-background-color=00000000",
+                        f"--window-size={W2},{H2}", f"--screenshot={shot}", f"file://{html}"],
+                       check=True, capture_output=True)
+        Image.open(shot).convert("RGBA").crop((0, 0, W2, H2)).resize(
+            (w, h), Image.LANCZOS).save(png_path)
+
 jobs = [  # (svg, png, width, height)
     ("icmns_logo.svg", "icmns_logo_1000.png", 1000, 1080),
     ("icmns_mark.svg", "icmns_mark_512.png", 512, 512),
@@ -175,16 +230,14 @@ for s, p, w, h in jobs:
     if h is None:
         vb = LOCK_VB
         h = round(w * vb[3] / vb[2])
-    subprocess.run(["node", render, os.path.join(OUT, s), os.path.join(OUT, p), str(w), str(h)],
-                   check=True)
+    rasterise(os.path.join(OUT, s), os.path.join(OUT, p), w, h)
 
 # social-share card (Open Graph / Twitter), 1200 x 630
 og_w = (LOCK_VB[3] + 120) * 1200 / 630
 og_vb = (round(LOCK_VB[0] - (og_w - LOCK_VB[2]) / 2), -60, round(og_w), LOCK_VB[3] + 120)
 with open(os.path.join(OUT, "og_card.svg"), "w") as fh:
     fh.write(svg(og_vb, lock, NAME, og_vb[2:]))
-subprocess.run(["node", render, os.path.join(OUT, "og_card.svg"),
-                os.path.join(OUT, "og-image.png"), "1200", "630"], check=True)
+rasterise(os.path.join(OUT, "og_card.svg"), os.path.join(OUT, "og-image.png"), 1200, 630)
 os.remove(os.path.join(OUT, "og_card.svg"))
 
 from PIL import Image  # noqa: E402  (ships with matplotlib)

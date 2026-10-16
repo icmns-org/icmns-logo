@@ -28,6 +28,12 @@ PALETTES = {
                  TITLE="#f2f0ec", SUB="#bdb8b0"),
     "cool": dict(BG="#0b1021", AP="#4c8dff", SI="#3fe0c5", OB1="#8fd8ff", OB2="#9b7bff",
                  TITLE="#eef4ff", SUB="#9fb0cc"),
+    # matched to the icmns.org "slate blue" site palette (light and dark mode);
+    # AP is the site's link colour
+    "site-light": dict(BG="#ffffff", AP="#1f5f8b", SI="#17766d", OB1="#2c5fa6", OB2="#4a3f9e",
+                       TITLE="#1d2330", SUB="#5b6475"),
+    "site-dark": dict(BG="#12161d", AP="#8cc8f0", SI="#6fe0cf", OB1="#b9e0ff", OB2="#b3a6ff",
+                      TITLE="#e6e8ec", SUB="#9aa3b2"),
 }
 args = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 args.add_argument("--palette", default="cool", choices=PALETTES)
@@ -36,6 +42,8 @@ args.add_argument("--mask", help="image whose shape gives the cortex outline "
 args.add_argument("--seed", type=int, default=3)
 args.add_argument("--no-cerebellum", action="store_true",
                   help="omit the cerebellum (e.g. if the mask image already includes it)")
+args.add_argument("--stroke-scale", type=float, default=1.0,
+                  help="multiply all fibre widths (thicker lines read better on light backgrounds)")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -193,14 +201,14 @@ for c in [-0.12, 0.18, 0.45]:
             sm = smooth(seg[a:b])
             for ch in chunked(sm):
                 op = 0.95 if abs(c) < 0.3 else 0.7
-                fibres.append((3, to_d(ch), orient_colour(ch), 1.15, op))
+                fibres.append((3, to_d(ch), orient_colour(ch), 1.15 * args.stroke_scale, op))
 
 # outline of the cortex (pial surface), as two close fibres
 gen_sd = contourpy.contour_generator(x, y, SD, name="serial")
 for c in [-0.004, -0.014]:
     for seg in gen_sd.lines(c):
         for ch in chunked(smooth(seg), 18):
-            fibres.append((3, to_d(ch), orient_colour(ch), 1.1, 0.75))
+            fibres.append((3, to_d(ch), orient_colour(ch), 1.1 * args.stroke_scale, 0.75))
 # silhouette used to hide what lies behind the cerebrum
 occluder = "".join(to_d(seg) + "Z" for seg in gen_sd.lines(0.0))
 
@@ -227,11 +235,11 @@ for c in np.linspace(-0.3, 0.45, 30):
         for a, b in zip(idx[::2], idx[1::2]):
             if b - a > 4:
                 col = AP if rng.random() < 0.55 else (OB1 if rng.random() < 0.5 else OB2)
-                fibres.append((1, to_d(smooth(seg[a:b], 2)), col, 0.95, 0.85))
+                fibres.append((1, to_d(smooth(seg[a:b], 2)), col, 0.95 * args.stroke_scale, 0.85))
 gen_c = contourpy.contour_generator(x, y, GC, name="serial")
 for c in (0.97, 0.93):
     for seg in gen_c.lines(c):
-        fibres.append((1, to_d(seg), OB2, 1.0, 0.8))
+        fibres.append((1, to_d(seg), OB2, 1.0 * args.stroke_scale, 0.8))
 if args.no_cerebellum:
     fibres = [f for f in fibres if f[0] != 1]
 
@@ -263,7 +271,7 @@ width = 0.012 + 0.07 * np.sin(np.pi * np.clip((sarc - 0.06) / 0.88, 0, 1)) ** 1.
 for d in np.linspace(-1, 1, 21):
     seg = C + ((d + rng.normal(0, 0.05)) * width)[:, None] * N
     col = OB1 if abs(d) < 0.35 else (OB2 if abs(d) > 0.8 else SI)
-    fibres.append((4, to_d(seg, 2), col, 1.0, 0.95))
+    fibres.append((4, to_d(seg, 2), col, 1.0 * args.stroke_scale, 0.95))
 stem_halo = to_d(C, 2)
 
 
@@ -313,8 +321,8 @@ for layer in (1, 3, 4):
 logo = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">',
         '<title>ICMNS: International Conference on Mathematical Neuroscience</title>',
         f'<rect width="{W}" height="{H}" fill="{BG}"/>', *body,
-        f'<path d="{title}" fill="{P['TITLE']}"/>',
-        f'<path d="{sub}" fill="{P['SUB']}"/>', '</svg>']
+        f'<path d="{title}" fill="{P["TITLE"]}"/>',
+        f'<path d="{sub}" fill="{P["SUB"]}"/>', '</svg>']
 with open(f"{args.out}_logo.svg", "w") as fh:
     fh.write("\n".join(logo))
 
