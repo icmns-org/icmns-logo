@@ -62,6 +62,8 @@ args.add_argument("--cerebellum", default="folia", choices=["folia", "phase"],
 args.add_argument("--shift-back", type=float, default=0.0,
                   help="move the phase-portrait cerebellum and the anatomical brainstem this "
                   "far towards the back of the brain (brain units; the cerebrum is ~2.3 long)")
+args.add_argument("--cerebellum-back", type=float, default=0.0,
+                  help="move only the phase-portrait cerebellum further back (added to --shift-back)")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -300,7 +302,7 @@ if args.cerebellum == "phase":
     CBP = [(-0.15, -0.35), (-0.34, -0.31), (-0.56, -0.29), (-0.74, -0.32), (-0.85, -0.40),
            (-0.90, -0.50), (-0.87, -0.61), (-0.79, -0.69), (-0.65, -0.74), (-0.49, -0.76),
            (-0.35, -0.73), (-0.24, -0.68), (-0.17, -0.61), (-0.18, -0.53), (-0.18, -0.44)]
-    CB = closed_spline(CBP) - np.array([args.shift_back, 0.0])
+    CB = closed_spline(CBP) - np.array([args.shift_back + args.cerebellum_back, 0.0])
     CBSD = polygon_sdf(X, Y, CB)
 
     def cb_sd(px, py):
