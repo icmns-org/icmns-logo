@@ -64,6 +64,8 @@ args.add_argument("--shift-back", type=float, default=0.0,
                   "far towards the back of the brain (brain units; the cerebrum is ~2.3 long)")
 args.add_argument("--cerebellum-back", type=float, default=0.0,
                   help="move only the phase-portrait cerebellum further back (added to --shift-back)")
+args.add_argument("--stem-width", type=float, default=1.0,
+                  help="scale the thickness of the integral-sign brainstem")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -464,6 +466,7 @@ sarc /= sarc[-1]
 width = 0.012 + 0.07 * np.sin(np.pi * np.clip((sarc - 0.06) / 0.88, 0, 1)) ** 1.3
 if args.stem == "anatomical":   # a pons: the stem swells a little below the midbrain
     width = width + 0.018 * np.exp(-((sarc - 0.40) / 0.10) ** 2)
+width = width * args.stem_width
 for d in np.linspace(-1, 1, 21):
     seg = C + ((d + rng.normal(0, 0.05)) * width)[:, None] * N
     col = OB1 if abs(d) < 0.35 else (OB2 if abs(d) > 0.8 else SI)
@@ -508,7 +511,7 @@ for layer in (1, 3, 4):
         body.append(f'<path d="{occluder}" fill="{BG}"/>')
     if layer == 4:   # the integral-sign brainstem sits on top, with a dark halo
         body.append(f'<path d="{stem_halo}" fill="none" stroke="{BG}" '
-                    f'stroke-width="{2 * 0.085 * S:.0f}" stroke-linecap="round" stroke-opacity="0.85"/>')
+                    f'stroke-width="{2 * 0.085 * S * args.stem_width:.0f}" stroke-linecap="round" stroke-opacity="0.85"/>')
     body.append(G)
     body += [f'<path d="{d}" stroke="{c}" stroke-width="{w}" stroke-opacity="{o}"/>'
              for l, d, c, w, o in fibres if l == layer]
