@@ -66,6 +66,9 @@ args.add_argument("--cerebellum-back", type=float, default=0.0,
                   help="move only the phase-portrait cerebellum further back (added to --shift-back)")
 args.add_argument("--stem-width", type=float, default=1.0,
                   help="scale the thickness of the integral-sign brainstem")
+args.add_argument("--stem-fade", action="store_true",
+                  help="let the top of the integral-sign brainstem pass under the cerebrum, "
+                  "fading out gradually instead of being drawn on top")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -467,11 +470,34 @@ width = 0.012 + 0.07 * np.sin(np.pi * np.clip((sarc - 0.06) / 0.88, 0, 1)) ** 1.
 if args.stem == "anatomical":   # a pons: the stem swells a little below the midbrain
     width = width + 0.018 * np.exp(-((sarc - 0.40) / 0.10) ** 2)
 width = width * args.stem_width
+def stem_fade(pts):
+    """Opacity factor along the stem: 1 outside the cerebrum, fading smoothly to a
+    faint ghost as the stem passes under it (SD < 0 inside the cortex)."""
+    if not args.stem_fade:
+        return np.ones(len(pts))
+    sd = sd_at(pts[:, 0], pts[:, 1])
+    return np.clip(np.exp(np.minimum(sd, 0) / 0.05), 0.12, 1.0)
+
+
+def faded_pieces(seg, n=6):
+    """Split a polyline into short overlapping pieces, each with its fade factor."""
+    if not args.stem_fade:
+        return [(seg, 1.0)]
+    out = []
+    for i in range(0, len(seg) - 1, n):
+        piece = seg[i:i + n + 1]
+        out.append((piece, float(stem_fade(piece.mean(0)[None])[0])))
+    return out
+
+
 for d in np.linspace(-1, 1, 21):
     seg = C + ((d + rng.normal(0, 0.05)) * width)[:, None] * N
     col = OB1 if abs(d) < 0.35 else (OB2 if abs(d) > 0.8 else SI)
-    fibres.append((4, to_d(seg, 2), col, 1.0 * args.stroke_scale, 0.95))
-stem_halo = to_d(C, 2)
+    for piece, f in faded_pieces(seg[::2]):
+        fibres.append((4, to_d(piece), col, 1.0 * args.stroke_scale, round(0.95 * f, 3)))
+# halo: separates the stem from what lies behind; under the cerebrum it fades
+# faster than the stem, so the cortex's folds show through
+stem_halo = [(to_d(piece), f * f) for piece, f in faded_pieces(C[::2])]
 
 
 # ---------------------------------------------------------------- text as paths
@@ -510,8 +536,9 @@ for layer in (1, 3, 4):
     if layer == 3:   # cerebrum hides whatever lies behind it
         body.append(f'<path d="{occluder}" fill="{BG}"/>')
     if layer == 4:   # the integral-sign brainstem sits on top, with a dark halo
-        body.append(f'<path d="{stem_halo}" fill="none" stroke="{BG}" '
-                    f'stroke-width="{2 * 0.085 * S * args.stem_width:.0f}" stroke-linecap="round" stroke-opacity="0.85"/>')
+        body += [f'<path d="{hd}" fill="none" stroke="{BG}" '
+                 f'stroke-width="{2 * 0.085 * S * args.stem_width:.0f}" stroke-linecap="round" '
+                 f'stroke-opacity="{0.85 * hf:.3g}"/>' for hd, hf in stem_halo]
     body.append(G)
     body += [f'<path d="{d}" stroke="{c}" stroke-width="{w}" stroke-opacity="{o}"/>'
              for l, d, c, w, o in fibres if l == layer]
