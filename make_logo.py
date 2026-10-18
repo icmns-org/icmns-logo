@@ -69,6 +69,9 @@ args.add_argument("--stem-width", type=float, default=1.0,
 args.add_argument("--stem-fade", action="store_true",
                   help="let the top of the integral-sign brainstem pass under the cerebrum, "
                   "fading out gradually instead of being drawn on top")
+args.add_argument("--stem-behind-cerebellum", action="store_true",
+                  help="with --stem-fade and the phase-portrait cerebellum: the integral also "
+                  "fades where it passes behind the cerebellum")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -476,6 +479,8 @@ def stem_fade(pts):
     if not args.stem_fade:
         return np.ones(len(pts))
     sd = sd_at(pts[:, 0], pts[:, 1])
+    if args.stem_behind_cerebellum and args.cerebellum == "phase":
+        sd = np.minimum(sd, cb_sd(pts[:, 0], pts[:, 1]))     # behind the cerebellum too
     return np.clip(np.exp(np.minimum(sd, 0) / 0.05), 0.12, 1.0)
 
 
