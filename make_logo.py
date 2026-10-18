@@ -51,6 +51,14 @@ args.add_argument("--no-cerebellum", action="store_true",
                   help="omit the cerebellum (e.g. if the mask image already includes it)")
 args.add_argument("--stroke-scale", type=float, default=1.0,
                   help="multiply all fibre widths (thicker lines read better on light backgrounds)")
+args.add_argument("--outline", default="classic", choices=["classic", "anatomical"],
+                  help="cortex outline: the original ellipses, or a lateral-view hemisphere")
+args.add_argument("--stem", default="classic", choices=["classic", "anatomical"],
+                  help="integral-sign brainstem: original placement, or emerging under the "
+                  "cerebrum in front of the cerebellum, with a pons")
+args.add_argument("--cerebellum", default="folia", choices=["folia", "arbor", "phase"],
+                  help="folia (original), arbor vitae as a fractal tree, or a "
+                  "FitzHugh-Nagumo phase portrait")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -98,6 +106,44 @@ def cortex_sdf(X, Y):
     return smax(brain, -gap, k=60)
 
 
+def closed_spline(P, n=40):
+    """Closed Catmull-Rom spline through the points P."""
+    P = np.asarray(P, float)
+    Q = np.vstack([P[-1], P, P[0], P[1]])
+    out = []
+    for i in range(1, len(Q) - 2):
+        p0, p1, p2, p3 = Q[i - 1:i + 3]
+        t = np.linspace(0, 1, n, endpoint=False)[:, None]
+        out.append(0.5 * ((2 * p1) + (-p0 + p2) * t
+                          + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t ** 2
+                          + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    return np.vstack(out)
+
+
+def anatomical_sdf(X, Y):
+    """Signed distance (<0 inside) to a left-hemisphere outline in lateral view,
+    front to the right: frontal lobe, parietal arch, occipital pole, temporal
+    lobe and pole, and a thin lateral (Sylvian) fissure."""
+    from matplotlib.path import Path
+    P = [(1.10, 0.12), (1.02, 0.44), (0.82, 0.70), (0.50, 0.87), (0.12, 0.94),
+         (-0.28, 0.91), (-0.62, 0.79), (-0.90, 0.57), (-1.07, 0.30), (-1.16, 0.03),
+         (-1.12, -0.16), (-0.96, -0.27), (-0.70, -0.31), (-0.44, -0.37),
+         (-0.16, -0.50), (0.14, -0.57), (0.42, -0.55), (0.64, -0.44), (0.74, -0.30),
+         (0.75, -0.21), (0.86, -0.17), (1.02, -0.08)]
+    C = closed_spline(P)
+    pts = np.c_[X.ravel(), Y.ravel()]
+    d = np.empty(len(pts))
+    for i in range(0, len(pts), 20000):            # distance to the outline, in chunks
+        q = pts[i:i + 20000]
+        d[i:i + 20000] = np.sqrt(((q[:, None, :] - C[None, :, :]) ** 2).sum(-1)).min(1)
+    ins = Path(C).contains_points(pts)
+    sd = np.where(ins, -d, d).reshape(X.shape)
+    # lateral fissure: from the temporal pole, backwards and slightly up
+    g, t = seg_dist(X, Y, (0.74, -0.23), (-0.10, 0.02))
+    gap = g - (0.006 + 0.010 * (1 - t))
+    return smax(sd, -gap, k=80)
+
+
 def image_sdf(path):
     """Cortex outline from an image: the shape is scaled to the same box as the
     built-in outline, and a blurred indicator stands in for a signed distance."""
@@ -131,7 +177,8 @@ def image_sdf(path):
     return (0.5 - blur) * 2 * sig * 1.25               # ~ signed distance near the edge
 
 
-SD = image_sdf(args.mask) if args.mask else cortex_sdf(X, Y)
+SD = (image_sdf(args.mask) if args.mask
+      else anatomical_sdf(X, Y) if args.outline == "anatomical" else cortex_sdf(X, Y))
 
 
 def sd_at(px, py):
@@ -235,7 +282,89 @@ cs, sn = np.cos(0.3), np.sin(0.3)
 uc, vc = cs * uc + sn * vc, -sn * uc + cs * vc
 folia = vc + 0.9 * uc ** 2 + 0.01 * np.sin(18 * uc)
 gen_f = contourpy.contour_generator(x, y, folia, name="serial")
-for c in np.linspace(-0.3, 0.45, 30):
+
+
+def from_local(a, b):
+    """Cerebellum-local coordinates (rotated ellipse frame) to brain coordinates."""
+    return np.c_[-0.62 + cs * a - sn * b, -0.56 + sn * a + cs * b]
+
+
+def clip_draw(seg, colour, width, opacity, lim=0.95):
+    ok = g_cerebellum(seg[:, 0], seg[:, 1]) < lim
+    idx = np.flatnonzero(np.diff(np.r_[0, ok.astype(int), 0]))
+    for a, b in zip(idx[::2], idx[1::2]):
+        if b - a > 2:
+            fibres.append((1, to_d(seg[a:b]), colour, width * args.stroke_scale, opacity))
+
+
+def to_rim(p, ang):
+    """Distance from local point p to the cerebellum ellipse along direction ang."""
+    d = np.array([np.cos(ang), np.sin(ang)])
+    A = (d[0] / 0.42) ** 2 + (d[1] / 0.25) ** 2
+    B = 2 * (p[0] * d[0] / 0.42 ** 2 + p[1] * d[1] / 0.25 ** 2)
+    Cq = (p[0] / 0.42) ** 2 + (p[1] / 0.25) ** 2 - 1
+    return (-B + np.sqrt(B * B - 4 * A * Cq)) / (2 * A)
+
+
+if args.cerebellum == "arbor":
+    # arbor vitae ("tree of life"): the white matter of the cerebellum branches
+    # like a tree. Drawn as a self-similar tree: a trunk from the peduncle at the
+    # front fans out into lobes, each splitting until its twigs reach the surface.
+    def branch(p, ang, length, depth, w):
+        n = 10
+        angs = ang + rng.normal(0, 0.06) * np.linspace(0, 1, n)
+        seg = p + np.vstack([[0, 0], np.cumsum(np.c_[np.cos(angs), np.sin(angs)] * (length / n), axis=0)])
+        col = AP if depth >= 4 else (OB1 if depth == 3 else (SI if depth == 2 else OB2))
+        clip_draw(from_local(seg[:, 0], seg[:, 1]), col, w, 0.92)
+        if depth == 0:
+            return
+        end, a_end = seg[-1], angs[-1]
+        for sgn in (-1, 1):
+            a2 = a_end + sgn * (0.33 + 0.05 * rng.random())
+            room = to_rim(end, a2)
+            branch(end, a2, min(length * 0.66, 0.55 * room), depth - 1, max(0.45, w * 0.72))
+    hilum = np.array([0.20, -0.02])
+    trunk = hilum + np.array([-0.08, 0.0])
+    clip_draw(from_local(np.array([hilum[0], trunk[0]]), np.array([hilum[1], trunk[1]])), AP, 2.4, 0.95)
+    for a0 in np.linspace(np.pi - 1.3, np.pi + 1.3, 7):
+        branch(trunk, a0, 0.40 * to_rim(trunk, a0), 5, 1.7)
+elif args.cerebellum == "phase":
+    # FitzHugh-Nagumo, the textbook model of a spiking neuron:
+    #   v' = v - v^3/3 - w + I,   w' = eps (v + a - b w).
+    # Trajectories from inside and outside spiral onto the limit cycle (the spike).
+    a_, b_, eps_, I_ = 0.7, 0.8, 0.08, 0.5
+    def fhn(z):
+        v, w = z
+        return np.array([v - v ** 3 / 3 - w + I_, eps_ * (v + a_ - b_ * w)])
+    def run(z, steps, h=0.02):
+        z, out = np.array(z, float), []
+        for _ in range(steps):
+            k1 = fhn(z); k2 = fhn(z + h / 2 * k1); k3 = fhn(z + h / 2 * k2); k4 = fhn(z + h * k3)
+            z = z + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            out.append(z.copy())
+        return np.array(out)
+    cyc = run((2.0, 1.0), 6000)[-2600:]          # settle, then keep about one period and a bit
+    lo, hi = cyc.min(0), cyc.max(0)
+    mid, half = (lo + hi) / 2, (hi - lo) / 2
+    def to_cb(z):                                # cycle fills ~80% of the ellipse
+        q = (z - mid) / half
+        return from_local(0.30 * q[:, 0] + 0.02, 0.17 * q[:, 1])
+    # fixed point (inside the cycle): trajectories leave it and spiral out
+    vs = np.roots([1 / 3, 0, 1 / b_ - 1, a_ / b_ - I_])           # v^3/3 + (1/b - 1) v + (a/b - I) = 0
+    v0 = vs[np.abs(vs.imag) < 1e-9].real[0]
+    fp = np.array([v0, (v0 + a_) / b_])
+    for k in range(6):
+        th = 2 * np.pi * k / 6
+        tr = run(fp + 0.02 * np.array([np.cos(th), np.sin(th)]), 2500)
+        clip_draw(to_cb(tr), (OB1, SI, OB2)[k % 3], 0.75, 0.8)
+    # from outside: start on a ring around the cycle and spiral in
+    for k in range(9):
+        th = 2 * np.pi * k / 9
+        z0 = mid + 1.25 * half * np.array([np.cos(th), np.sin(th)])
+        tr = run(z0, 2000)
+        clip_draw(to_cb(tr), (OB2, OB1, SI)[k % 3], 0.8, 0.75)
+    clip_draw(to_cb(cyc), AP, 1.5, 1.0, lim=1.3)
+for c in (np.linspace(-0.3, 0.45, 30) if args.cerebellum == "folia" else []):
     for seg in gen_f.lines(c + rng.normal(0, 0.003)):
         ok = g_cerebellum(seg[:, 0], seg[:, 1]) < 0.97
         idx = np.flatnonzero(np.diff(np.r_[0, ok.astype(int), 0]))
@@ -268,6 +397,12 @@ def catmull_rom(P, n=60):
 ctrl = np.array([[0.30, -0.50], [0.27, -0.43], [0.19, -0.41], [0.11, -0.47],
                  [0.06, -0.58], [-0.03, -0.78], [-0.11, -0.96], [-0.19, -1.07],
                  [-0.28, -1.11], [-0.34, -1.06]])
+if args.stem == "anatomical":
+    # emerges from under the cerebrum (midbrain), runs down and slightly back,
+    # just in front of the cerebellum, and curls back at the medulla
+    ctrl = np.array([[0.20, -0.36], [0.17, -0.29], [0.09, -0.27], [0.02, -0.33],
+                     [-0.02, -0.46], [-0.06, -0.66], [-0.10, -0.86], [-0.15, -1.00],
+                     [-0.23, -1.07], [-0.30, -1.03]])
 C = catmull_rom(ctrl)
 T = np.gradient(C, axis=0)
 T /= np.linalg.norm(T, axis=1)[:, None]
@@ -275,6 +410,8 @@ N = np.c_[-T[:, 1], T[:, 0]]
 sarc = np.r_[0, np.cumsum(np.linalg.norm(np.diff(C, axis=0), axis=1))]
 sarc /= sarc[-1]
 width = 0.012 + 0.07 * np.sin(np.pi * np.clip((sarc - 0.06) / 0.88, 0, 1)) ** 1.3
+if args.stem == "anatomical":   # a pons: the stem swells a little below the midbrain
+    width = width + 0.018 * np.exp(-((sarc - 0.40) / 0.10) ** 2)
 for d in np.linspace(-1, 1, 21):
     seg = C + ((d + rng.normal(0, 0.05)) * width)[:, None] * N
     col = OB1 if abs(d) < 0.35 else (OB2 if abs(d) > 0.8 else SI)
