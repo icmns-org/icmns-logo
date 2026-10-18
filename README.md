@@ -12,7 +12,7 @@ See [`HANDOFF.md`](HANDOFF.md) for the full design notes and the mathematics.
 
 | Folder / files | Palette | Background | Used for |
 |---|---|---|---|
-| `web-site-2026-light/`, `web-site-2026-dark/`, `web-site-2026-light-opaque/` | `nord-light`, `nord-dark`: icmns.org since the 2026 redesign | transparent / Snow Storm | Website (generate with the commands below) |
+| `web-site-2026-light/`, `web-site-2026-dark/`, `web-site-2026-light-opaque/` | `nord-light`, `nord-dark`: icmns.org since the 2026 redesign | transparent / Snow Storm | Website since the 2026 redesign |
 | `web-site-light/` | `site-light`: the earlier icmns.org (light mode) | transparent, for white | Website header and home page (light mode), browser tab icon |
 | `web-site-dark/` | `site-dark`: matches icmns.org (dark mode) | transparent, for `#12161d` | Website header and home page (dark mode) |
 | `web-site-light-opaque/` | `site-light` | white | Link-preview card (`og-image.png`), phone icons, slides, documents |
