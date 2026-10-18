@@ -27,13 +27,13 @@ Requirements: Python 3.10+ with `numpy`, `matplotlib`, `contourpy` and `pillow`.
 
 ```sh
 # the versions used on icmns.org since the 2026 redesign (Nord palette, anatomical
-# outline, FitzHugh-Nagumo cerebellum, slimmer integral-sign brainstem)
-O="--outline anatomical --stem anatomical --cerebellum phase --shift-back 0.18 --stem-width 0.75"
-python3 make_logo.py --palette nord-light --stroke-scale 2.9 $O --out nord-c-light
-python3 make_logo.py --palette nord-dark  --stroke-scale 2.4 $O --out nord-c-dark
-python3 web_assets.py --src nord-c-light --out web-nord-c-light --transparent
-python3 web_assets.py --src nord-c-dark  --out web-nord-c-dark  --transparent
-python3 web_assets.py --src nord-c-light --out web-nord-c-light-opaque
+# outline, FitzHugh-Nagumo cerebellum, slimmer integral-sign brainstem fading under the cerebrum)
+O="--outline anatomical --stem anatomical --cerebellum phase --shift-back 0.18 --stem-width 0.75 --stem-fade"
+python3 make_logo.py --palette nord-light --stroke-scale 2.9 $O --out nord-d-light
+python3 make_logo.py --palette nord-dark  --stroke-scale 2.4 $O --out nord-d-dark
+python3 web_assets.py --src nord-d-light --out web-nord-d-light --transparent
+python3 web_assets.py --src nord-d-dark  --out web-nord-d-dark  --transparent
+python3 web_assets.py --src nord-d-light --out web-nord-d-light-opaque
 
 # the earlier versions (slate-blue palette, original shapes)
 python3 make_logo.py --palette site-light --stroke-scale 2.2 --out site-light
