@@ -12,7 +12,8 @@ See [`HANDOFF.md`](HANDOFF.md) for the full design notes and the mathematics.
 
 | Folder / files | Palette | Background | Used for |
 |---|---|---|---|
-| `web-site-light/` | `site-light`: matches icmns.org (light mode) | transparent, for white | Website header and home page (light mode), browser tab icon |
+| `web-site-2026-light/`, `web-site-2026-dark/`, `web-site-2026-light-opaque/` | `nord-light`, `nord-dark`: icmns.org since the 2026 redesign | transparent / Snow Storm | Website (generate with the commands below) |
+| `web-site-light/` | `site-light`: the earlier icmns.org (light mode) | transparent, for white | Website header and home page (light mode), browser tab icon |
 | `web-site-dark/` | `site-dark`: matches icmns.org (dark mode) | transparent, for `#12161d` | Website header and home page (dark mode) |
 | `web-site-light-opaque/` | `site-light` | white | Link-preview card (`og-image.png`), phone icons, slides, documents |
 | `web/`, `icmns_logo.svg`, `icmns_mark.svg` | `cool` (original) | navy `#0b1021` | Original design, kept for reference |
@@ -27,13 +28,14 @@ Requirements: Python 3.10+ with `numpy`, `matplotlib`, `contourpy` and `pillow`.
 
 ```sh
 # the versions used on icmns.org since the 2026 redesign (Nord palette, anatomical
-# outline, FitzHugh-Nagumo cerebellum, slimmer integral-sign brainstem fading under the cerebrum)
-O="--outline anatomical --stem anatomical --cerebellum phase --shift-back 0.18 --stem-width 0.75 --stem-fade"
-python3 make_logo.py --palette nord-light --stroke-scale 2.9 $O --out nord-d-light
-python3 make_logo.py --palette nord-dark  --stroke-scale 2.4 $O --out nord-d-dark
-python3 web_assets.py --src nord-d-light --out web-nord-d-light --transparent
-python3 web_assets.py --src nord-d-dark  --out web-nord-d-dark  --transparent
-python3 web_assets.py --src nord-d-light --out web-nord-d-light-opaque
+# outline, FitzHugh-Nagumo cerebellum touching a slim integral-sign brainstem that
+# fades under the cerebrum)
+O="--outline anatomical --stem anatomical --cerebellum phase --shift-back 0.18 --stem-width 0.75 --stem-fade --cerebellum-back -0.10"
+python3 make_logo.py --palette nord-light --stroke-scale 2.9 $O --out site-2026-light
+python3 make_logo.py --palette nord-dark  --stroke-scale 2.4 $O --out site-2026-dark
+python3 web_assets.py --src site-2026-light --out web-site-2026-light --transparent
+python3 web_assets.py --src site-2026-dark  --out web-site-2026-dark  --transparent
+python3 web_assets.py --src site-2026-light --out web-site-2026-light-opaque
 
 # the earlier versions (slate-blue palette, original shapes)
 python3 make_logo.py --palette site-light --stroke-scale 2.2 --out site-light
@@ -46,7 +48,7 @@ python3 web_assets.py --src site-light --out web-site-light-opaque
 python3 make_logo.py && python3 web_assets.py
 ```
 
-Other options: `--outline`, `--stem`, `--cerebellum`, `--shift-back`, `--cerebellum-back`, `--stem-width` and `--stem-fade` choose between the original and the newer shapes (see `python3 make_logo.py --help`); the defaults reproduce the original logo. `--seed N` changes the folding pattern (3 is the chosen one), `--mask brain.png` takes the outline from an image, and `--no-cerebellum` omits the cerebellum. Output is deterministic: the same options give the same files.
+Other options: `--outline`, `--stem`, `--cerebellum`, `--shift-back`, `--cerebellum-back`, `--stem-width`, `--stem-fade` and `--stem-behind-cerebellum` choose between the original and the newer shapes (see `python3 make_logo.py --help`); the defaults reproduce the original logo. `--seed N` changes the folding pattern (3 is the chosen one), `--mask brain.png` takes the outline from an image, and `--no-cerebellum` omits the cerebellum. Output is deterministic: the same options give the same files.
 
 `make_logo.jl` is a Julia port that has not been tested yet (see `HANDOFF.md`).
 
