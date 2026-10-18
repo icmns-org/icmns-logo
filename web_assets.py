@@ -212,7 +212,9 @@ def rasterise(svg_path, png_path, w, h):
         shot = os.path.join(tmp, "r.png")
         subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
                         "--allow-file-access-from-files", "--default-background-color=00000000",
-                        f"--window-size={W2},{H2}", f"--screenshot={shot}", f"file://{html}"],
+                        # the visible area of a headless window is shorter than the window,
+                        # so ask for a taller one and crop: otherwise the bottom stays empty
+                        f"--window-size={W2},{H2 + 200}", f"--screenshot={shot}", f"file://{html}"],
                        check=True, capture_output=True)
         Image.open(shot).convert("RGBA").crop((0, 0, W2, H2)).resize(
             (w, h), Image.LANCZOS).save(png_path)

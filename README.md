@@ -26,7 +26,16 @@ The transparent versions still use their background colour to hide fibres behind
 Requirements: Python 3.10+ with `numpy`, `matplotlib`, `contourpy` and `pillow`. For PNGs you need either Node + Playwright or a local Google Chrome/Chromium (used automatically; set `CHROME=/path/to/chrome` if it isn't found).
 
 ```sh
-# the versions used on icmns.org
+# the versions used on icmns.org since the 2026 redesign (Nord palette, anatomical
+# outline, FitzHugh-Nagumo cerebellum, slimmer integral-sign brainstem)
+O="--outline anatomical --stem anatomical --cerebellum phase --shift-back 0.18 --stem-width 0.75"
+python3 make_logo.py --palette nord-light --stroke-scale 2.9 $O --out nord-c-light
+python3 make_logo.py --palette nord-dark  --stroke-scale 2.4 $O --out nord-c-dark
+python3 web_assets.py --src nord-c-light --out web-nord-c-light --transparent
+python3 web_assets.py --src nord-c-dark  --out web-nord-c-dark  --transparent
+python3 web_assets.py --src nord-c-light --out web-nord-c-light-opaque
+
+# the earlier versions (slate-blue palette, original shapes)
 python3 make_logo.py --palette site-light --stroke-scale 2.2 --out site-light
 python3 make_logo.py --palette site-dark  --stroke-scale 1.6 --out site-dark
 python3 web_assets.py --src site-light --out web-site-light --transparent
@@ -37,7 +46,7 @@ python3 web_assets.py --src site-light --out web-site-light-opaque
 python3 make_logo.py && python3 web_assets.py
 ```
 
-Other options: `--seed N` changes the folding pattern (3 is the chosen one), `--mask brain.png` takes the outline from an image, and `--no-cerebellum` omits the cerebellum. Output is deterministic: the same options give the same files.
+Other options: `--outline`, `--stem`, `--cerebellum`, `--shift-back`, `--cerebellum-back`, `--stem-width` and `--stem-fade` choose between the original and the newer shapes (see `python3 make_logo.py --help`); the defaults reproduce the original logo. `--seed N` changes the folding pattern (3 is the chosen one), `--mask brain.png` takes the outline from an image, and `--no-cerebellum` omits the cerebellum. Output is deterministic: the same options give the same files.
 
 `make_logo.jl` is a Julia port that has not been tested yet (see `HANDOFF.md`).
 
