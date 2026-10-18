@@ -59,6 +59,9 @@ args.add_argument("--stem", default="classic", choices=["classic", "anatomical"]
 args.add_argument("--cerebellum", default="folia", choices=["folia", "phase"],
                   help="folia in an oval (original), or a lateral-view cerebellum filled "
                   "with the FitzHugh-Nagumo flow and its limit cycle")
+args.add_argument("--shift-back", type=float, default=0.0,
+                  help="move the phase-portrait cerebellum and the anatomical brainstem this "
+                  "far towards the back of the brain (brain units; the cerebrum is ~2.3 long)")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -297,7 +300,7 @@ if args.cerebellum == "phase":
     CBP = [(-0.15, -0.35), (-0.34, -0.31), (-0.56, -0.29), (-0.74, -0.32), (-0.85, -0.40),
            (-0.90, -0.50), (-0.87, -0.61), (-0.79, -0.69), (-0.65, -0.74), (-0.49, -0.76),
            (-0.35, -0.73), (-0.24, -0.68), (-0.17, -0.61), (-0.18, -0.53), (-0.18, -0.44)]
-    CB = closed_spline(CBP)
+    CB = closed_spline(CBP) - np.array([args.shift_back, 0.0])
     CBSD = polygon_sdf(X, Y, CB)
 
     def cb_sd(px, py):
@@ -449,7 +452,7 @@ if args.stem == "anatomical":
     # just in front of the cerebellum, and curls back at the medulla
     ctrl = np.array([[0.20, -0.36], [0.17, -0.29], [0.09, -0.27], [0.02, -0.33],
                      [-0.02, -0.46], [-0.06, -0.66], [-0.10, -0.86], [-0.15, -1.00],
-                     [-0.23, -1.07], [-0.30, -1.03]])
+                     [-0.23, -1.07], [-0.30, -1.03]]) - np.array([args.shift_back, 0.0])
 C = catmull_rom(ctrl)
 T = np.gradient(C, axis=0)
 T /= np.linalg.norm(T, axis=1)[:, None]
