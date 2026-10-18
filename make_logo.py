@@ -289,12 +289,14 @@ gen_f = contourpy.contour_generator(x, y, folia, name="serial")
 
 
 if args.cerebellum == "phase":
-    # Lateral-view cerebellum: flat-ish top under the occipital lobe sloping
+    # Lateral-view cerebellum, in proportion to the cerebrum (about a third of its
+    # length, 30% of its height), its top tucked under the occipital lobe:
+    # flat-ish top sloping
     # backwards, full posterior bulge, convex underside with the tonsil, and a
     # hollow front that wraps around the brainstem.
-    CBP = [(-0.20, -0.40), (-0.42, -0.34), (-0.68, -0.32), (-0.89, -0.36), (-1.02, -0.46),
-           (-1.08, -0.60), (-1.05, -0.74), (-0.95, -0.85), (-0.79, -0.92), (-0.60, -0.94),
-           (-0.43, -0.90), (-0.30, -0.83), (-0.22, -0.74), (-0.24, -0.63), (-0.24, -0.52)]
+    CBP = [(-0.15, -0.35), (-0.34, -0.31), (-0.56, -0.29), (-0.74, -0.32), (-0.85, -0.40),
+           (-0.90, -0.50), (-0.87, -0.61), (-0.79, -0.69), (-0.65, -0.74), (-0.49, -0.76),
+           (-0.35, -0.73), (-0.24, -0.68), (-0.17, -0.61), (-0.18, -0.53), (-0.18, -0.44)]
     CB = closed_spline(CBP)
     CBSD = polygon_sdf(X, Y, CB)
 
@@ -354,7 +356,7 @@ if args.cerebellum == "phase":
         n = np.hypot(bx, by) + 1e-12
         return bx / n, by / n
 
-    def streamline(p, length=0.15, step=0.0035):
+    def streamline(p, length=0.12, step=0.003):
         """Trace the direction field a fixed arc length both ways from p (midpoint RK)."""
         out = []
         for sgn in (-1, 1):
@@ -371,7 +373,7 @@ if args.cerebellum == "phase":
 
     # even seeding: a jittered grid over the cerebellum, skipping seeds that fall
     # on a line already drawn, so the flow fills the shape with an even texture
-    spacing = 0.032
+    spacing = 0.026
     occupied = np.zeros((ny, nx), bool)
     rad = int(round(0.6 * spacing / dx))
 
