@@ -56,9 +56,9 @@ args.add_argument("--outline", default="classic", choices=["classic", "anatomica
 args.add_argument("--stem", default="classic", choices=["classic", "anatomical"],
                   help="integral-sign brainstem: original placement, or emerging under the "
                   "cerebrum in front of the cerebellum, with a pons")
-args.add_argument("--cerebellum", default="folia", choices=["folia", "arbor", "phase"],
-                  help="folia (original), arbor vitae as a fractal tree, or a "
-                  "FitzHugh-Nagumo phase portrait")
+args.add_argument("--cerebellum", default="folia", choices=["folia", "phase"],
+                  help="folia in an oval (original), or a lateral-view cerebellum filled "
+                  "with the FitzHugh-Nagumo flow and its limit cycle")
 args.add_argument("--out", default="icmns")
 args = args.parse_args()
 P = PALETTES[args.palette]
@@ -120,24 +120,28 @@ def closed_spline(P, n=40):
     return np.vstack(out)
 
 
-def anatomical_sdf(X, Y):
-    """Signed distance (<0 inside) to a left-hemisphere outline in lateral view,
-    front to the right: frontal lobe, parietal arch, occipital pole, temporal
-    lobe and pole, and a thin lateral (Sylvian) fissure."""
+def polygon_sdf(X, Y, C):
+    """Signed distance (<0 inside) from grid points to the closed polyline C."""
     from matplotlib.path import Path
-    P = [(1.10, 0.12), (1.02, 0.44), (0.82, 0.70), (0.50, 0.87), (0.12, 0.94),
-         (-0.28, 0.91), (-0.62, 0.79), (-0.90, 0.57), (-1.07, 0.30), (-1.16, 0.03),
-         (-1.12, -0.16), (-0.96, -0.27), (-0.70, -0.31), (-0.44, -0.37),
-         (-0.16, -0.50), (0.14, -0.57), (0.42, -0.55), (0.64, -0.44), (0.74, -0.30),
-         (0.75, -0.21), (0.86, -0.17), (1.02, -0.08)]
-    C = closed_spline(P)
     pts = np.c_[X.ravel(), Y.ravel()]
     d = np.empty(len(pts))
     for i in range(0, len(pts), 20000):            # distance to the outline, in chunks
         q = pts[i:i + 20000]
         d[i:i + 20000] = np.sqrt(((q[:, None, :] - C[None, :, :]) ** 2).sum(-1)).min(1)
     ins = Path(C).contains_points(pts)
-    sd = np.where(ins, -d, d).reshape(X.shape)
+    return np.where(ins, -d, d).reshape(X.shape)
+
+
+def anatomical_sdf(X, Y):
+    """Signed distance (<0 inside) to a left-hemisphere outline in lateral view,
+    front to the right: frontal lobe, parietal arch, occipital pole, temporal
+    lobe and pole, and a thin lateral (Sylvian) fissure."""
+    P = [(1.10, 0.12), (1.02, 0.44), (0.82, 0.70), (0.50, 0.87), (0.12, 0.94),
+         (-0.28, 0.91), (-0.62, 0.79), (-0.90, 0.57), (-1.07, 0.30), (-1.16, 0.03),
+         (-1.12, -0.16), (-0.96, -0.27), (-0.70, -0.31), (-0.44, -0.37),
+         (-0.16, -0.50), (0.14, -0.57), (0.42, -0.55), (0.64, -0.44), (0.74, -0.30),
+         (0.75, -0.21), (0.86, -0.17), (1.02, -0.08)]
+    sd = polygon_sdf(X, Y, closed_spline(P))
     # lateral fissure: from the temporal pole, backwards and slightly up
     g, t = seg_dist(X, Y, (0.74, -0.23), (-0.10, 0.02))
     gap = g - (0.006 + 0.010 * (1 - t))
@@ -284,86 +288,127 @@ folia = vc + 0.9 * uc ** 2 + 0.01 * np.sin(18 * uc)
 gen_f = contourpy.contour_generator(x, y, folia, name="serial")
 
 
-def from_local(a, b):
-    """Cerebellum-local coordinates (rotated ellipse frame) to brain coordinates."""
-    return np.c_[-0.62 + cs * a - sn * b, -0.56 + sn * a + cs * b]
+if args.cerebellum == "phase":
+    # Lateral-view cerebellum: flat-ish top under the occipital lobe sloping
+    # backwards, full posterior bulge, convex underside with the tonsil, and a
+    # hollow front that wraps around the brainstem.
+    CBP = [(-0.20, -0.40), (-0.42, -0.34), (-0.68, -0.32), (-0.89, -0.36), (-1.02, -0.46),
+           (-1.08, -0.60), (-1.05, -0.74), (-0.95, -0.85), (-0.79, -0.92), (-0.60, -0.94),
+           (-0.43, -0.90), (-0.30, -0.83), (-0.22, -0.74), (-0.24, -0.63), (-0.24, -0.52)]
+    CB = closed_spline(CBP)
+    CBSD = polygon_sdf(X, Y, CB)
 
+    def cb_sd(px, py):
+        j = np.clip(np.rint((px - x[0]) / dx).astype(int), 0, nx - 1)
+        i = np.clip(np.rint((py - y[0]) / (y[1] - y[0])).astype(int), 0, ny - 1)
+        return CBSD[i, j]
 
-def clip_draw(seg, colour, width, opacity, lim=0.95):
-    ok = g_cerebellum(seg[:, 0], seg[:, 1]) < lim
-    idx = np.flatnonzero(np.diff(np.r_[0, ok.astype(int), 0]))
-    for a, b in zip(idx[::2], idx[1::2]):
-        if b - a > 2:
-            fibres.append((1, to_d(seg[a:b]), colour, width * args.stroke_scale, opacity))
+    def clip_cb(seg, colour, width, opacity, margin=-0.012):
+        ok = cb_sd(seg[:, 0], seg[:, 1]) < margin
+        idx = np.flatnonzero(np.diff(np.r_[0, ok.astype(int), 0]))
+        for a, b in zip(idx[::2], idx[1::2]):
+            if b - a > 3:
+                fibres.append((1, to_d(seg[a:b]), colour, width * args.stroke_scale, opacity))
 
-
-def to_rim(p, ang):
-    """Distance from local point p to the cerebellum ellipse along direction ang."""
-    d = np.array([np.cos(ang), np.sin(ang)])
-    A = (d[0] / 0.42) ** 2 + (d[1] / 0.25) ** 2
-    B = 2 * (p[0] * d[0] / 0.42 ** 2 + p[1] * d[1] / 0.25 ** 2)
-    Cq = (p[0] / 0.42) ** 2 + (p[1] / 0.25) ** 2 - 1
-    return (-B + np.sqrt(B * B - 4 * A * Cq)) / (2 * A)
-
-
-if args.cerebellum == "arbor":
-    # arbor vitae ("tree of life"): the white matter of the cerebellum branches
-    # like a tree. Drawn as a self-similar tree: a trunk from the peduncle at the
-    # front fans out into lobes, each splitting until its twigs reach the surface.
-    def branch(p, ang, length, depth, w):
-        n = 10
-        angs = ang + rng.normal(0, 0.06) * np.linspace(0, 1, n)
-        seg = p + np.vstack([[0, 0], np.cumsum(np.c_[np.cos(angs), np.sin(angs)] * (length / n), axis=0)])
-        col = AP if depth >= 4 else (OB1 if depth == 3 else (SI if depth == 2 else OB2))
-        clip_draw(from_local(seg[:, 0], seg[:, 1]), col, w, 0.92)
-        if depth == 0:
-            return
-        end, a_end = seg[-1], angs[-1]
-        for sgn in (-1, 1):
-            a2 = a_end + sgn * (0.33 + 0.05 * rng.random())
-            room = to_rim(end, a2)
-            branch(end, a2, min(length * 0.66, 0.55 * room), depth - 1, max(0.45, w * 0.72))
-    hilum = np.array([0.20, -0.02])
-    trunk = hilum + np.array([-0.08, 0.0])
-    clip_draw(from_local(np.array([hilum[0], trunk[0]]), np.array([hilum[1], trunk[1]])), AP, 2.4, 0.95)
-    for a0 in np.linspace(np.pi - 1.3, np.pi + 1.3, 7):
-        branch(trunk, a0, 0.40 * to_rim(trunk, a0), 5, 1.7)
-elif args.cerebellum == "phase":
     # FitzHugh-Nagumo, the textbook model of a spiking neuron:
-    #   v' = v - v^3/3 - w + I,   w' = eps (v + a - b w).
-    # Trajectories from inside and outside spiral onto the limit cycle (the spike).
-    a_, b_, eps_, I_ = 0.7, 0.8, 0.08, 0.5
-    def fhn(z):
-        v, w = z
-        return np.array([v - v ** 3 / 3 - w + I_, eps_ * (v + a_ - b_ * w)])
-    def run(z, steps, h=0.02):
-        z, out = np.array(z, float), []
-        for _ in range(steps):
-            k1 = fhn(z); k2 = fhn(z + h / 2 * k1); k3 = fhn(z + h / 2 * k2); k4 = fhn(z + h * k3)
-            z = z + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-            out.append(z.copy())
-        return np.array(out)
-    cyc = run((2.0, 1.0), 6000)[-2600:]          # settle, then keep about one period and a bit
+    #   v' = v - v^3/3 - w + I,   w' = eps (v + a - b w)
+    # eps = 0.2: still a firing neuron (the rest state is an unstable focus inside
+    # a limit cycle), with enough rotation for the flow to read as curves
+    a_, b_, eps_, I_ = 0.7, 0.8, 0.2, 0.5
+
+    def fhn(v, w):
+        return v - v ** 3 / 3 - w + I_, eps_ * (v + a_ - b_ * w)
+
+    v_, w_ = 2.0, 1.0                                  # find the limit cycle
+    h = 0.01
+    cyc = []
+    for it in range(40000):
+        k1 = fhn(v_, w_); k2 = fhn(v_ + h / 2 * k1[0], w_ + h / 2 * k1[1])
+        v_, w_ = v_ + h * k2[0], w_ + h * k2[1]
+        if it > 32000:
+            cyc.append((v_, w_))
+    cyc = np.array(cyc)
+    # keep exactly one period: the first return close to the starting point
+    dist = np.hypot(*(cyc - cyc[0]).T)
+    far = np.flatnonzero(dist > 0.5)[0]
+    period = far + np.argmin(dist[far:far + int(0.9 * len(cyc))] if len(cyc) > far else dist[far:])
+    cyc = cyc[:period + 1]
     lo, hi = cyc.min(0), cyc.max(0)
-    mid, half = (lo + hi) / 2, (hi - lo) / 2
-    def to_cb(z):                                # cycle fills ~80% of the ellipse
-        q = (z - mid) / half
-        return from_local(0.30 * q[:, 0] + 0.02, 0.17 * q[:, 1])
-    # fixed point (inside the cycle): trajectories leave it and spiral out
-    vs = np.roots([1 / 3, 0, 1 / b_ - 1, a_ / b_ - I_])           # v^3/3 + (1/b - 1) v + (a/b - I) = 0
-    v0 = vs[np.abs(vs.imag) < 1e-9].real[0]
-    fp = np.array([v0, (v0 + a_) / b_])
-    for k in range(6):
-        th = 2 * np.pi * k / 6
-        tr = run(fp + 0.02 * np.array([np.cos(th), np.sin(th)]), 2500)
-        clip_draw(to_cb(tr), (OB1, SI, OB2)[k % 3], 0.75, 0.8)
-    # from outside: start on a ring around the cycle and spiral in
-    for k in range(9):
-        th = 2 * np.pi * k / 9
-        z0 = mid + 1.25 * half * np.array([np.cos(th), np.sin(th)])
-        tr = run(z0, 2000)
-        clip_draw(to_cb(tr), (OB2, OB1, SI)[k % 3], 0.8, 0.75)
-    clip_draw(to_cb(cyc), AP, 1.5, 1.0, lim=1.3)
+    # phase plane -> brain: the cycle fills the middle of the cerebellum
+    bx0, bx1 = CB[:, 0].min(), CB[:, 0].max()
+    by0, by1 = CB[:, 1].min(), CB[:, 1].max()
+    ccx, ccy = (bx0 + bx1) / 2 + 0.01, (by0 + by1) / 2 - 0.01
+    sx, sy = 0.70 * (bx1 - bx0) / (hi[0] - lo[0]), 0.62 * (by1 - by0) / (hi[1] - lo[1])
+    mv, mw = (lo + hi) / 2
+
+    def to_brain(v, w):
+        return ccx + sx * (v - mv), ccy + sy * (w - mw)
+
+    def to_phase(px, py):
+        return mv + (px - ccx) / sx, mw + (py - ccy) / sy
+
+    def direction(px, py):
+        """Unit direction of the FHN flow, drawn in brain coordinates."""
+        dv, dw = fhn(*to_phase(px, py))
+        bx, by = sx * dv, sy * dw
+        n = np.hypot(bx, by) + 1e-12
+        return bx / n, by / n
+
+    def streamline(p, length=0.15, step=0.0035):
+        """Trace the direction field a fixed arc length both ways from p (midpoint RK)."""
+        out = []
+        for sgn in (-1, 1):
+            q, pts = np.array(p, float), []
+            for _ in range(int(length / step)):
+                d1 = np.array(direction(*q)) * sgn
+                d2 = np.array(direction(*(q + 0.5 * step * d1))) * sgn
+                q = q + step * d2
+                if cb_sd(q[0:1], q[1:2])[0] > -0.006:
+                    break
+                pts.append(q.copy())
+            out.append(pts[::-1] if sgn < 0 else pts)
+        return np.array(out[0] + [list(p)] + out[1])
+
+    # even seeding: a jittered grid over the cerebellum, skipping seeds that fall
+    # on a line already drawn, so the flow fills the shape with an even texture
+    spacing = 0.032
+    occupied = np.zeros((ny, nx), bool)
+    rad = int(round(0.6 * spacing / dx))
+
+    def mark(seg):
+        j = np.clip(np.rint((seg[:, 0] - x[0]) / dx).astype(int), 0, nx - 1)
+        i = np.clip(np.rint((seg[:, 1] - y[0]) / (y[1] - y[0])).astype(int), 0, ny - 1)
+        for di in range(-rad, rad + 1):
+            for dj in range(-rad, rad + 1):
+                if di * di + dj * dj <= rad * rad:
+                    occupied[np.clip(i + di, 0, ny - 1), np.clip(j + dj, 0, nx - 1)] = True
+
+    cyc_b = np.c_[to_brain(cyc[:, 0], cyc[:, 1])]
+    mark(cyc_b)
+    gxs = np.arange(bx0, bx1, spacing)
+    gys = np.arange(by0, by1, spacing)
+    seeds = [(gx + rng.uniform(-0.3, 0.3) * spacing, gy + rng.uniform(-0.3, 0.3) * spacing)
+             for gy in gys for gx in gxs]
+    rng.shuffle(seeds)
+    for sxp, syp in seeds:
+        if cb_sd(np.array([sxp]), np.array([syp]))[0] > -0.02:
+            continue
+        j = int(round((sxp - x[0]) / dx)); i = int(round((syp - y[0]) / (y[1] - y[0])))
+        if occupied[i, j]:
+            continue
+        seg = streamline((sxp, syp))
+        if len(seg) < 10:
+            continue
+        mark(seg)
+        clip_cb(smooth(seg, 1), orient_colour(seg), 0.75, 0.85)
+    # the limit cycle: the spike
+    clip_cb(cyc_b, AP, 1.7, 1.0, margin=0.5)
+    # outline (cerebellar cortex surface), as two close lines
+    gen_cb = contourpy.contour_generator(x, y, CBSD, name="serial")
+    for c in (-0.004, -0.014):
+        for seg in gen_cb.lines(c):
+            for ch in chunked(smooth(seg), 18):
+                fibres.append((1, to_d(ch), OB2, 1.0 * args.stroke_scale, 0.8))
 for c in (np.linspace(-0.3, 0.45, 30) if args.cerebellum == "folia" else []):
     for seg in gen_f.lines(c + rng.normal(0, 0.003)):
         ok = g_cerebellum(seg[:, 0], seg[:, 1]) < 0.97
@@ -373,7 +418,7 @@ for c in (np.linspace(-0.3, 0.45, 30) if args.cerebellum == "folia" else []):
                 col = AP if rng.random() < 0.55 else (OB1 if rng.random() < 0.5 else OB2)
                 fibres.append((1, to_d(smooth(seg[a:b], 2)), col, 0.95 * args.stroke_scale, 0.85))
 gen_c = contourpy.contour_generator(x, y, GC, name="serial")
-for c in (0.97, 0.93):
+for c in ((0.97, 0.93) if args.cerebellum == "folia" else ()):
     for seg in gen_c.lines(c):
         fibres.append((1, to_d(seg), OB2, 1.0 * args.stroke_scale, 0.8))
 if args.no_cerebellum:
