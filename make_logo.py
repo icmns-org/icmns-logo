@@ -34,6 +34,13 @@ PALETTES = {
                        TITLE="#1d2330", SUB="#5b6475"),
     "site-dark": dict(BG="#12161d", AP="#8cc8f0", SI="#6fe0cf", OB1="#b9e0ff", OB2="#b3a6ff",
                       TITLE="#e6e8ec", SUB="#9aa3b2"),
+    # Nord (nordtheme.com): Frost blues and Aurora purple. Dark mode uses the Nord
+    # colours as they are, on Polar Night; light mode darkens them slightly so the
+    # fibres keep their contrast on Snow Storm
+    "nord-light": dict(BG="#eceff4", AP="#5e81ac", SI="#5f9a98", OB1="#4f6f96", OB2="#8e6a8a",
+                       TITLE="#2e3440", SUB="#4c566a"),
+    "nord-dark": dict(BG="#2e3440", AP="#81a1c1", SI="#8fbcbb", OB1="#88c0d0", OB2="#b48ead",
+                      TITLE="#eceff4", SUB="#d8dee9"),
 }
 args = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 args.add_argument("--palette", default="cool", choices=PALETTES)
